@@ -21,7 +21,7 @@ class InvalidDataError(WeatherAPIError):
 #Clean string
 def sanitize_text(s: str) -> str:
     s = s.strip()
-    s = " ".join(s.strip())
+    s = " ".join(s.split())
     return s
 
 #Convert value to float
@@ -114,7 +114,7 @@ class WeatherObservation(Observation):
     @longitude.setter
     def longitude(self, value: float) -> None:
         #Convert and validate range
-        v = to_float("Longitude", value)
+        v = to_float("longitude", value)
         if not (-180.0 <= v <= 180.0):
             raise InvalidDataError("Longitude must be between -180 and 180")
         self.__longitude = v 
@@ -126,7 +126,7 @@ class WeatherObservation(Observation):
     @temperature_c.setter
     def temperature_c(self, value: float) -> None:
         #Convert and validate a reasonable temperature range
-        v = to_float("Temperature_c", value)
+        v = to_float("temperature_c", value)
         if not (-100.0 <= v <= 70.0):
             raise InvalidDataError("Temperature seems unrealistic")
         self.__temperature_c = v
@@ -159,7 +159,7 @@ class WeatherObservation(Observation):
         return self.__notes
 
     @notes.setter
-    def notes(self -> value: Optional[str]) -> None:
+    def notes(self, value: Optional[str]) -> None:
         #Allow None or sanitized string
         if value is None:
             self.__notes = None
@@ -187,9 +187,9 @@ class WeatherObservation(Observation):
         #Representation of key fields
         return (
             "WeatherObservation("
-            f"city={self.city!r}, country={self.country!r}, "
-            f"lat={self.latitude:.4f}, lon={self.longitude:.4f} "
-            f"tempC={self.temperature_c:.1f}, wind_kmh={self.windspeed_kmh:.1f} "
+            f"city={self.city!r}, country={self.country!r}, " 
+            f"lat={self.latitude:.4f}, lon={self.longitude:.4f}, " 
+            f"tempC={self.temperature_c:.1f}, wind_kmh={self.windspeed_kmh:.1f}, " 
             f"time={self.observation_time!r}, notes={self.notes!r})"
         )
 
@@ -234,7 +234,7 @@ def geocode_city(city: str, country: str, timeout: int = 8) -> Tuple[float, floa
     results = data.get("results") or []
     if not results:
         #No matches for the given city/country
-        raise LocationNotFoundError("No location found for {city_clean}, {country_clean}")
+        raise LocationNotFoundError(f"No location found for {city_clean}, {country_clean}")
     
     #Take first/best match
     best = results[0]
@@ -248,7 +248,7 @@ def geocode_city(city: str, country: str, timeout: int = 8) -> Tuple[float, floa
 
 def fetch_current_weather(latitude: float, longitude: float, timeout: int = 8) -> Dict[str, Any]:
     #Endpoint for Weather
-    url = "https://api.open-meteo.com/v1/forecast?current_weather=true"
+    url = "https://api.open-meteo.com/v1/forecast"
 
     #Query parameters
     params = {
@@ -261,7 +261,7 @@ def fetch_current_weather(latitude: float, longitude: float, timeout: int = 8) -
 
     try:
         #Make the HTTP request with timeout
-        resp = requests.get(url, params=param, timeout=timeout)
+        resp = requests.get(url, params=params, timeout=timeout)
     except requests.exceptions.RequestException as e:
         #Request error
         raise WeatherAPIError(f"Network error during weather fetch: {e}") from e
@@ -277,7 +277,7 @@ def fetch_current_weather(latitude: float, longitude: float, timeout: int = 8) -
     current = data.get("current_weather")
     if not isinstance(current, dict):
         #If the block is missing or not a dict, it's invalid
-        raise InvalidDataError("Respoonse missing 'current_weather' block")
+        raise InvalidDataError("Response missing 'current_weather' block")
     
     #Return current wather section
     return current
