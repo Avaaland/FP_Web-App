@@ -192,3 +192,125 @@ class WeatherObservation(Observation):
             f"tempC={self.temperature_c:.1f}, wind_kmh={self.windspeed_kmh:.1f} "
             f"time={self.observation_time!r}, notes={self.notes!r})"
         )
+
+#API Client Functions
+def geocode_city(city: str, country: str, timeout: int = 8) -> Tuple[float, float]:
+    #Sanitize inputs
+    city_clean = sanitize_text(city)
+    country_clean = sanitize_text(country)
+
+    #Validate
+    if not city_clean:
+        raise InvalidDataError("City cannot be empty")
+    if not country_clean:
+        raise InvalidDataError("Country cannot be empty")
+    
+    #Endpoint url for Geocoding
+    url = "https://geocoding-api.open-meteo.com/v1/search"
+
+    #Build query parameters for the GET request
+    params = {
+        "name": city_clean, #City name to look up
+        "count": 1, #Best match
+        "language": "en", #English response names
+        "format": "json", #JSON response
+        "country": country_clean #Country filter
+    }
+
+    try:
+        #Make the HTTP Request with a timeout
+        resp = requests.get(url, params=params, timeout=timeout)
+    except requests.exceptions.RequestException as e:
+        raise WeatherAPIError(f"Network error during geocoding: {e}") from e
+    
+    #Check status code and raise if not OK (200)
+    if resp.status_code != 200:
+        raise WeatherAPIError(f"Geocoding failed with status {resp.status_code}")
+    
+    #Parse JSON body (dict)
+    data = resp.json()
+
+    #Check results exist
+    results = data.get("results") or []
+    if not results:
+        #No matches for the given city/country
+        raise LocationNotFoundError("No location found for {city_clean}, {country_clean}")
+    
+    #Take first/best match
+    best = results[0]
+
+    #Get lat/lon and convert to float with validation
+    lat = to_float("latitude", best.get("latitude"))
+    lon = to_float("longitude", best.get("longitude"))
+
+    #Rteurn coordinates
+    return lat, lon
+
+def fetch_current_weather(latitude: float, longitude: float, timeout: int = 8) -> Dict[str, Any]:
+    #Endpoint for Weather
+    url = "https://api.open-meteo.com/v1/forecast?current_weather=true"
+
+    #Query parameters
+    params = {
+        "latitude": latitude, #Latitude
+        "longitude": longitude, #Longitude
+        "current_weather": "true", #Ask for current weather block
+        "windspeed_unit": "kmh", #Force kmh
+        "timezone": "UTC", #Timestamp in UTC format
+    }
+
+    try:
+        #Make the HTTP request with timeout
+        resp = requests.get(url, params=param, timeout=timeout)
+    except requests.exceptions.RequestException as e:
+        #Request error
+        raise WeatherAPIError(f"Network error during weather fetch: {e}") from e
+    
+    #Check status code
+    if resp.status_code != 200:
+        raise WeatherAPIError(f"Weather fetch failed with status {resp.status_code}")
+    
+    #Parse json body
+    data = resp.json()
+
+    #Get current weather block
+    current = data.get("current_weather")
+    if not isinstance(current, dict):
+        #If the block is missing or not a dict, it's invalid
+        raise InvalidDataError("Respoonse missing 'current_weather' block")
+    
+    #Return current wather section
+    return current
+
+def build_observation(
+    city: str,
+    country: str,
+    notes: Optional[str] = None,
+) -> WeatherObservation:
+
+    #Get coordinates from geocoding
+    lat, lon = geocode_city(city, country)
+
+    #Fetch current weather at coordinates
+    current = fetch_current_weather(lat, lon)
+
+    #Pull values from API response and validate them via setters
+    temperature_c = to_float("temperature_c", current.get("temperature"))
+    windspeed_kmh = to_float("windspeed_kmh", current.get("windspeed"))
+    observation_time = current.get("time")
+
+    if not isinstance(observation_time, str) or not observation_time.strip():
+        #Non-empty string check
+        raise InvalidDataError("Observation time missing or invalid")
+    
+    #Create and return validated observation instance
+    return WeatherObservation(
+        city=city,
+        country=country,
+        latitude=lat,
+        longitude=lon,
+        temperature_c=temperature_c,
+        windspeed_kmh=windspeed_kmh,
+        observation_time=observation_time,
+        notes=notes,
+    )
